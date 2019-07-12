@@ -1,0 +1,11 @@
+# ignore PyCharm IDE Files
+.idea/
+
+# ignore py cache
+__pycache__
+
+# ignore virtual environment
+venv/
+
+# ignore test folder
+test/*
