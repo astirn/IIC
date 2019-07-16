@@ -26,7 +26,9 @@ python models_iic.py
 ```
 This will train IIC for the unsupervised clustering task using the MNIST data set.
 I did my best to vigilantly adhere to the configuration in the original author's pyTorch code.
-Running this code will print to console and produce a dynamically updated learning curve.
+Running this code will print to console and produce a dynamically updated learning curve similar to:
+
+![Alt text](Figure_1.png?raw=true "Learning Curve")
 
 ## Notes
 The MNIST accuracy reported in https://arxiv.org/abs/1807.06653 suggests that all 5 subheads converge to ~99% accuracy.
