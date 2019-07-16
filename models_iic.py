@@ -308,7 +308,7 @@ def train(mdl_class, graph, mdl_config, train_set, test_set, early_stop_buffer=1
     :return: None
     """
     # construct iterator
-    iterator = train_set.make_initializable_iterator()
+    iterator = tf.compat.v1.data.make_initializable_iterator(train_set)
     x, gx, y = iterator.get_next().values()
 
     # construct initialization operations
