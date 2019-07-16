@@ -58,22 +58,20 @@ class ClusterIIC(object):
         self.loss = self.loss_A + self.loss_B
 
         # configure optimizers
-        self.gs_A = tf.Variable(0, name='global_step', trainable=False)
-        self.opt_A = tf.train.AdamOptimizer(kwargs['learning_rate'])
-        self.gs_B = tf.Variable(0, name='global_step', trainable=False)
-        self.opt_B = tf.train.AdamOptimizer(kwargs['learning_rate'])
+        self.gs = tf.Variable(0, name='global_step', trainable=False)
+        self.opt = tf.train.AdamOptimizer(kwargs['learning_rate'])
 
         # configure training ops
         self.train_ops = []
         self.train_ops.append(tf.contrib.layers.optimize_loss(loss=self.loss_A,
-                                                              global_step=self.gs_A,
+                                                              global_step=self.gs,
                                                               learning_rate=kwargs['learning_rate'],
-                                                              optimizer=self.opt_A,
+                                                              optimizer=self.opt,
                                                               summaries=['loss', 'gradients']))
         self.train_ops.append(tf.contrib.layers.optimize_loss(loss=self.loss_B,
-                                                              global_step=self.gs_B,
+                                                              global_step=self.gs,
                                                               learning_rate=kwargs['learning_rate'],
-                                                              optimizer=self.opt_B,
+                                                              optimizer=self.opt,
                                                               summaries=['loss', 'gradients']))
 
         # test outputs
@@ -199,7 +197,7 @@ class ClusterIIC(object):
         while True:
             try:
                 # grab the results
-                results = sess.run([self.loss, self.loss_A, self.loss_B, y_ph, self.pis, self.x, self.gx])
+                results = sess.run([self.loss, self.loss_A, self.loss_B, y_ph, self.pis])#, self.x, self.gx])
 
                 # load metrics
                 loss.append(results[0])

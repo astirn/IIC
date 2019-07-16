@@ -2,7 +2,7 @@ import tensorflow as tf
 
 # set trainable variable initialization routines
 KERNEL_INIT = tf.contrib.layers.xavier_initializer_conv2d(dtype=tf.float32, uniform=True)
-WEIGHT_INIT = tf.contrib.layers.xavier_initializer(dtype=tf.float32, uniform=True)
+WEIGHT_INIT = tf.random_normal_initializer(mean=0.0, stddev=0.01, dtype=tf.float32)
 BIAS_INIT = tf.constant_initializer(0.0, dtype=tf.float32)
 
 
