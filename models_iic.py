@@ -59,7 +59,7 @@ class ClusterIIC(object):
 
         # configure optimizers
         self.gs = tf.Variable(0, name='global_step', trainable=False)
-        self.opt = tf.train.AdamOptimizer(kwargs['learning_rate'])
+        self.opt = tf.compat.v1.train.AdamOptimizer(kwargs['learning_rate'])
 
         # configure training ops
         self.train_ops = []
@@ -118,7 +118,7 @@ class ClusterIIC(object):
     def __head_out(z, k, name):
 
         # construct a new head that operates on the model's output for x
-        with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
+        with tf.compat.v1.variable_scope(name, reuse=tf.compat.v1.AUTO_REUSE):
             pi = tf.layers.dense(inputs=z,
                                  units=k,
                                  activation=tf.nn.softmax,
@@ -136,9 +136,9 @@ class ClusterIIC(object):
 
             # run the model
             pi_x = self.__head_out(self.z_x, k, name=head + str(i + 1))
-            num_vars = len(tf.global_variables())
+            num_vars = len(tf.compat.v1.global_variables())
             pi_gx = self.__head_out(self.z_gx, k, name=head + str(i + 1))
-            assert num_vars == len(tf.global_variables())
+            assert num_vars == len(tf.compat.v1.global_variables())
 
             # accumulate the clustering loss
             loss += self.__iic_loss(pi_x, pi_gx)
@@ -322,9 +322,9 @@ def train(mdl_class, graph, mdl_config, train_set, test_set, early_stop_buffer=1
     mdl.performance_dictionary_init(mdl.num_epochs)
 
     # start a monitored session
-    cfg = tf.ConfigProto()
+    cfg = tf.compat.v1.ConfigProto()
     cfg.gpu_options.allow_growth = True
-    with tf.Session(config=cfg) as sess:
+    with tf.compat.v1.Session(config=cfg) as sess:
 
         # initialize model variables
         sess.run(tf.global_variables_initializer())

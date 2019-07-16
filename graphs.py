@@ -1,9 +1,9 @@
 import tensorflow as tf
 
 # set trainable variable initialization routines
-KERNEL_INIT = tf.contrib.layers.xavier_initializer_conv2d(dtype=tf.float32, uniform=True)
-WEIGHT_INIT = tf.random_normal_initializer(mean=0.0, stddev=0.01, dtype=tf.float32)
-BIAS_INIT = tf.constant_initializer(0.0, dtype=tf.float32)
+KERNEL_INIT = tf.compat.v1.initializers.he_uniform()
+WEIGHT_INIT = tf.random_normal_initializer(mean=0.0, stddev=0.01)
+BIAS_INIT = tf.constant_initializer(0.0)
 
 
 def convolution_layer(x, kernel_size, num_out_channels, activation, is_training, name):
@@ -91,7 +91,7 @@ class IICGraph(object):
         :param is_training: whether we are training or testing (used by batch normalization)
         :return: output of VGG
         """
-        with tf.variable_scope('GraphB', reuse=tf.AUTO_REUSE):
+        with tf.compat.v1.variable_scope('GraphB', reuse=tf.compat.v1.AUTO_REUSE):
 
             # layer 1
             num_out_channels = self.fan_out_init
@@ -169,7 +169,7 @@ class VGG(object):
         :param is_training: whether we are training or testing (used by batch normalization)
         :return: output of VGG
         """
-        with tf.variable_scope('VGG_A', reuse=tf.AUTO_REUSE):
+        with tf.compat.v1.variable_scope('VGG_A', reuse=tf.compat.v1.AUTO_REUSE):
 
             # layer 1
             num_out_channels = self.fan_out_init
@@ -266,7 +266,7 @@ class VGG(object):
         :param is_training: whether we are training or testing (used by batch normalization)
         :return: output of VGG
         """
-        with tf.variable_scope('VGG_C', reuse=tf.AUTO_REUSE):
+        with tf.compat.v1.variable_scope('VGG_C', reuse=tf.compat.v1.AUTO_REUSE):
             # layer 1
             num_out_channels = self.fan_out_init
             x = convolution_layer(x=x,
@@ -392,7 +392,7 @@ class VGG(object):
         :param is_training: whether we are training or testing (used by batch normalization)
         :return: output of VGG
         """
-        with tf.variable_scope('VGG_D', reuse=tf.AUTO_REUSE):
+        with tf.compat.v1.variable_scope('VGG_D', reuse=tf.compat.v1.AUTO_REUSE):
             # layer 1
             num_out_channels = self.fan_out_init
             x = convolution_layer(x=x,
