@@ -128,7 +128,9 @@ class ClusterIIC(object):
 
         # run the graph
         z_x = graph.evaluate(x, is_training=self.is_training)
+        num_vars = len(tf.compat.v1.global_variables())
         z_gx = graph.evaluate(gx, is_training=self.is_training)
+        assert num_vars == len(tf.compat.v1.global_variables())
 
         # construct losses
         self.loss_A = self.__head_loss(z_x, z_gx, self.k_A, self.num_A_sub_heads, 'A')
@@ -402,7 +404,7 @@ if __name__ == '__main__':
     mdl = ClusterIIC(**MDL_CONFIG[DATA_SET])
 
     # train the model
-    mdl.train(IICGraph(config='B', fan_out_init=64), TRAIN_SET, TEST_SET, num_epochs=600)
+    mdl.train(IICGraph(config='B', batch_norm=True, fan_out_init=64), TRAIN_SET, TEST_SET, num_epochs=600)
 
     print('All done!')
     plt.show()

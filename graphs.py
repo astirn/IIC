@@ -6,12 +6,13 @@ WEIGHT_INIT = tf.random_normal_initializer(mean=0.0, stddev=0.01)
 BIAS_INIT = tf.constant_initializer(0.0)
 
 
-def convolution_layer(x, kernel_size, num_out_channels, activation, is_training, name):
+def convolution_layer(x, kernel_size, num_out_channels, activation, batch_norm, is_training, name):
     """
     :param x: input data
     :param kernel_size: convolution kernel size
     :param num_out_channels: number of output channels
     :param activation: non-linearity
+    :param batch_norm: whether to use batch norm
     :param is_training: whether we are training or testing (used by batch normalization)
     :param name: variable scope name (empowers variable reuse)
     :return: layer output
@@ -28,8 +29,12 @@ def convolution_layer(x, kernel_size, num_out_channels, activation, is_training,
                          bias_initializer=BIAS_INIT,
                          name=name)
 
-    # run batch norm
-    x = tf.contrib.layers.batch_norm(inputs=x, activation_fn=activation, is_training=is_training)
+    # run batch norm if specified
+    if batch_norm:
+        x = tf.contrib.layers.batch_norm(inputs=x, is_training=is_training, scope=name)
+
+    # run activation
+    x = activation(x)
 
     return x
 
@@ -73,7 +78,7 @@ def fully_connected_layer(x, num_outputs, activation, is_training, name):
 
 
 class IICGraph(object):
-    def __init__(self, config='B', fan_out_init=64):
+    def __init__(self, config='B', batch_norm=True, fan_out_init=64):
         """
         :param config: character {A, B, C} that matches architecture in IIC supplementary materials
         :param fan_out_init: initial fan out (paper uses 64, but can be reduced for memory constrained systems)
@@ -83,6 +88,7 @@ class IICGraph(object):
 
         # save architectural details
         self.config = config
+        self.batch_norm = batch_norm
         self.fan_out_init = fan_out_init
 
     def __architecture_b(self, x, is_training):
@@ -95,42 +101,26 @@ class IICGraph(object):
 
             # layer 1
             num_out_channels = self.fan_out_init
-            x = convolution_layer(x=x,
-                                  kernel_size=5,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv1')
+            x = convolution_layer(x=x, kernel_size=5, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv1')
             x = max_pooling_layer(x=x, pool_size=2, strides=2, name='pool1')
 
             # layer 2
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=5,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv2')
+            x = convolution_layer(x=x, kernel_size=5, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv2')
             x = max_pooling_layer(x=x, pool_size=2, strides=2, name='pool2')
 
             # layer 3
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=5,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3')
+            x = convolution_layer(x=x, kernel_size=5, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3')
             x = max_pooling_layer(x=x, pool_size=2, strides=2, name='pool3')
 
             # layer 4
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=5,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4')
+            x = convolution_layer(x=x, kernel_size=5, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4')
 
             # flatten
             x = tf.contrib.layers.flatten(x)
@@ -151,7 +141,7 @@ class IICGraph(object):
 
 
 class VGG(object):
-    def __init__(self, config='A', fan_out_init=64):
+    def __init__(self, config='A', batch_norm=True, fan_out_init=64):
         """
         :param config: character {A, C, D} that matches architecture in VGG paper
         :param fan_out_init: initial fan out (paper uses 64, but can be reduced for memory constrained systems)
@@ -161,6 +151,7 @@ class VGG(object):
 
         # save architectural details
         self.config = config
+        self.batch_norm = batch_norm
         self.fan_out_init = fan_out_init
 
     def __vgg_a(self, x, is_training):
@@ -173,69 +164,37 @@ class VGG(object):
 
             # layer 1
             num_out_channels = self.fan_out_init
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv1_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv1_1')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool1')
 
             # layer 2
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv2_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv2_1')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool2')
 
             # layer 3
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3_2')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool3')
 
             # layer 4
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4_2')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool4')
 
             # layer 5
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv5_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv5_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv5_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv5_2')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool5')
 
             # flatten
@@ -269,99 +228,47 @@ class VGG(object):
         with tf.compat.v1.variable_scope('VGG_C', reuse=tf.compat.v1.AUTO_REUSE):
             # layer 1
             num_out_channels = self.fan_out_init
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv1_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv1_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv1_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv1_2')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool1')
 
             # layer 2
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv2_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv2_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv2_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv2_2')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool2')
 
             # layer 3
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3_2')
-            x = convolution_layer(x=x,
-                                  kernel_size=1,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3_3')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3_2')
+            x = convolution_layer(x=x, kernel_size=1, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3_3')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool3')
 
             # layer 4
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4_2')
-            x = convolution_layer(x=x,
-                                  kernel_size=1,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4_3')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4_2')
+            x = convolution_layer(x=x, kernel_size=1, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4_3')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool4')
 
             # layer 5
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv5_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv5_2')
-            x = convolution_layer(x=x,
-                                  kernel_size=1,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv5_3')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv5_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv5_2')
+            x = convolution_layer(x=x, kernel_size=1, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv5_3')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool5')
 
             # flatten
@@ -395,99 +302,47 @@ class VGG(object):
         with tf.compat.v1.variable_scope('VGG_D', reuse=tf.compat.v1.AUTO_REUSE):
             # layer 1
             num_out_channels = self.fan_out_init
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv1_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv1_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv1_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv1_2')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool1')
 
             # layer 2
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv2_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv2_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv2_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv2_2')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool2')
 
             # layer 3
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3_2')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv3_3')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv3_3')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool3')
 
             # layer 4
             num_out_channels *= 2
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4_2')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv4_3')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv4_3')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool4')
 
             # layer 5
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv5_1')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv5_2')
-            x = convolution_layer(x=x,
-                                  kernel_size=3,
-                                  num_out_channels=num_out_channels,
-                                  activation=self.activation,
-                                  is_training=is_training,
-                                  name='conv5_3')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv5_1')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv5_2')
+            x = convolution_layer(x=x, kernel_size=3, num_out_channels=num_out_channels, activation=self.activation,
+                                  batch_norm=self.batch_norm, is_training=is_training, name='conv5_3')
             x = max_pooling_layer(x=x, pool_size=3, strides=2, name='pool5')
 
             # flatten
