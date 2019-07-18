@@ -20,67 +20,41 @@ DPI = 600
 
 
 class ClusterIIC(object):
-    def __init__(self, graph, x, gx, **kwargs):
+    def __init__(self, num_classes, learning_rate, num_repeats, save_dir=None):
         """
-        :param graph: a computational graph with an 'evaluate(x, is_training)' method
-        :param x: image data
-        :param gx: perturbed image data
-        :param y: image labels (only for debugging and performance tracking)
-        :param kwargs: configuration dictionary for the base class
+        :param num_classes: number of classes
+        :param learning_rate: gradient step size
+        :param num_repeats: number of data repeats for x and g(x), used to up-sample
         """
-        # save inputs
-        self.x = x
-        self.gx = gx
-
-        # save the graph object
-        self.graph = graph
-
-        # run the graph
-        self.z_x = self.graph.evaluate(self.x, is_training=True)
-        self.z_gx = self.graph.evaluate(self.gx, is_training=True)
-        self.z_x_test = self.graph.evaluate(self.x, is_training=False)
+        # training indicating placeholder
+        self.is_training = tf.placeholder(tf.bool)
 
         # number of repeats
-        self.num_repeats = kwargs['num_repeats']
+        self.num_repeats = num_repeats
 
-        # head configuration
-        self.k_A = 50
+        # save configuration
+        self.k_A = 5 * num_classes
         self.num_A_sub_heads = 1
-        self.k_B = kwargs['num_classes']
+        self.k_B = num_classes
         self.num_B_sub_heads = 5
 
-        # compatibility variables
-        self.num_classes = self.K = self.k_B
+        # initialize losses
+        self.loss_A = None
+        self.loss_B = None
+        self.loss = None
 
-        # get the losses for each head
-        self.loss_A = self.__head_loss(self.k_A, self.num_A_sub_heads, 'A')
-        self.loss_B = self.__head_loss(self.k_B, self.num_B_sub_heads, 'B')
-        self.loss = self.loss_A + self.loss_B
-
-        # configure optimizers
-        self.gs = tf.Variable(0, name='global_step', trainable=False)
-        self.opt = tf.compat.v1.train.AdamOptimizer(kwargs['learning_rate'])
-
-        # configure training ops
+        # initialize optimizer
+        self.learning_rate = learning_rate
+        self.global_step = tf.Variable(0, name='global_step', trainable=False)
+        self.opt = tf.compat.v1.train.AdamOptimizer(self.learning_rate)
         self.train_ops = []
-        self.train_ops.append(tf.contrib.layers.optimize_loss(loss=self.loss_A,
-                                                              global_step=self.gs,
-                                                              learning_rate=kwargs['learning_rate'],
-                                                              optimizer=self.opt,
-                                                              summaries=['loss', 'gradients']))
-        self.train_ops.append(tf.contrib.layers.optimize_loss(loss=self.loss_B,
-                                                              global_step=self.gs,
-                                                              learning_rate=kwargs['learning_rate'],
-                                                              optimizer=self.opt,
-                                                              summaries=['loss', 'gradients']))
 
-        # test outputs
-        self.pis = [self.__head_out(self.z_x_test, self.k_B, 'B' + str(i + 1)) for i in range(self.num_B_sub_heads)]
+        # initialize outputs outputs
+        self.y_hats = None
 
         # initialize performance dictionary
-        self.num_epochs = kwargs['num_epochs']
         self.perf = None
-        self.save_dir = kwargs['save_dir']
+        self.save_dir = save_dir
 
         # configure performance plotting
         self.fig_learn, self.ax_learn = plt.subplots(1, 2)
@@ -119,25 +93,26 @@ class ClusterIIC(object):
 
         # construct a new head that operates on the model's output for x
         with tf.compat.v1.variable_scope(name, reuse=tf.compat.v1.AUTO_REUSE):
-            pi = tf.layers.dense(inputs=z,
-                                 units=k,
-                                 activation=tf.nn.softmax,
-                                 use_bias=True,
-                                 kernel_initializer=KERNEL_INIT,
-                                 bias_initializer=BIAS_INIT)
+            phi = tf.layers.dense(
+                inputs=z,
+                units=k,
+                activation=tf.nn.softmax,
+                use_bias=True,
+                kernel_initializer=KERNEL_INIT,
+                bias_initializer=BIAS_INIT)
 
-        return pi
+        return phi
 
-    def __head_loss(self, k, num_sub_heads, head):
+    def __head_loss(self, z_x, z_gx, k, num_sub_heads, head):
 
         # loop over the number of sub-heads
         loss = tf.constant(0, dtype=tf.float32)
         for i in range(num_sub_heads):
 
             # run the model
-            pi_x = self.__head_out(self.z_x, k, name=head + str(i + 1))
+            pi_x = self.__head_out(z_x, k, name=head + str(i + 1))
             num_vars = len(tf.compat.v1.global_variables())
-            pi_gx = self.__head_out(self.z_gx, k, name=head + str(i + 1))
+            pi_gx = self.__head_out(z_gx, k, name=head + str(i + 1))
             assert num_vars == len(tf.compat.v1.global_variables())
 
             # accumulate the clustering loss
@@ -149,7 +124,34 @@ class ClusterIIC(object):
 
         return loss
 
-    def performance_dictionary_init(self, num_epochs):
+    def __build(self, x, gx, graph):
+
+        # run the graph
+        z_x = graph.evaluate(x, is_training=self.is_training)
+        z_gx = graph.evaluate(gx, is_training=self.is_training)
+
+        # construct losses
+        self.loss_A = self.__head_loss(z_x, z_gx, self.k_A, self.num_A_sub_heads, 'A')
+        self.loss_B = self.__head_loss(z_x, z_gx, self.k_B, self.num_B_sub_heads, 'B')
+        self.loss = self.loss_A + self.loss_B
+
+        # set alternating training operations
+        self.train_ops.append(tf.contrib.layers.optimize_loss(loss=self.loss_A,
+                                                              global_step=self.global_step,
+                                                              learning_rate=self.learning_rate,
+                                                              optimizer=self.opt,
+                                                              summaries=['loss', 'gradients']))
+        self.train_ops.append(tf.contrib.layers.optimize_loss(loss=self.loss_B,
+                                                              global_step=self.global_step,
+                                                              learning_rate=self.learning_rate,
+                                                              optimizer=self.opt,
+                                                              summaries=['loss', 'gradients']))
+
+        # initialize outputs outputs
+        self.y_hats = [tf.argmax(self.__head_out(z_x, self.k_B, 'B' + str(i + 1)), axis=1)
+                       for i in range(self.num_B_sub_heads)]
+
+    def __performance_dictionary_init(self, num_epochs):
         """
         :param num_epochs: maximum number of epochs (used to size buffers)
         :return: None
@@ -169,14 +171,14 @@ class ClusterIIC(object):
         self.perf.update({'class_err_avg': copy.deepcopy(init_dict)})
         self.perf.update({'class_err_max': copy.deepcopy(init_dict)})
 
-    def performance_dictionary_update(self, sess, y_ph, iter_init, set_partition, idx):
+    def __performance_dictionary_update(self, sess, iter_init, set_partition, idx, y_ph=None):
         """
         :param self: model class
         :param sess: TensorFlow session
-        :param y_ph: TensorFlow placeholder for unseen labels
         :param iter_init: TensorFlow data iterator initializer associated
         :param set_partition: set name (e.g. train, validation, test)
         :param idx: insertion index (i.e. epoch - 1)
+        :param y_ph: TensorFlow placeholder for unseen labels
         :return: None
         """
         if self.perf is None:
@@ -187,25 +189,31 @@ class ClusterIIC(object):
         loss_A = []
         loss_B = []
         y = np.zeros([0, 1])
-        y_hat = [np.zeros([0, self.k_B])] * self.num_B_sub_heads
+        y_hats = [np.zeros([0, 1])] * self.num_B_sub_heads
 
         # initialize unsupervised data iterator
         sess.run(iter_init)
 
+        # configure metrics lists
+        metrics = [self.loss, self.loss_A, self.loss_B, self.y_hats]
+        if y_ph is not None:
+            metrics.append(y_ph)
+
         # loop over the batches within the unsupervised data iterator
-        print('Evaluating ' + set_partition + ' set performance... ', end='')
+        print('Evaluating ' + set_partition + ' set performance... ')
         while True:
             try:
                 # grab the results
-                results = sess.run([self.loss, self.loss_A, self.loss_B, y_ph, self.pis])#, self.x, self.gx])
+                results = sess.run(metrics, feed_dict={self.is_training: False})
 
                 # load metrics
                 loss.append(results[0])
                 loss_A.append(results[1])
                 loss_B.append(results[2])
-                y = np.concatenate((y, np.expand_dims(results[3], axis=1)))
                 for i in range(self.num_B_sub_heads):
-                    y_hat[i] = np.concatenate((y_hat[i], results[4][i]))
+                    y_hats[i] = np.concatenate((y_hats[i], np.expand_dims(results[3][i], axis=1)))
+                if y_ph is not None:
+                    y = np.concatenate((y, np.expand_dims(results[-1], axis=1)))
 
                 # _, ax = plt.subplots(2, 10)
                 # i_rand = np.random.choice(results[3].shape[0], 10)
@@ -222,19 +230,21 @@ class ClusterIIC(object):
             except tf.errors.OutOfRangeError:
                 break
 
-        # new line
-        print('Done')
-
         # average the results
-        self.perf['loss'][set_partition][idx] = sum(loss) / len(loss)
-        self.perf['loss_A'][set_partition][idx] = sum(loss_A) / len(loss_A)
-        self.perf['loss_B'][set_partition][idx] = sum(loss_B) / len(loss_B)
+        self.perf['loss'][set_partition][idx] = np.mean(loss)
+        self.perf['loss_A'][set_partition][idx] = np.mean(loss_A)
+        self.perf['loss_B'][set_partition][idx] = np.mean(loss_B)
 
         # compute classification accuracy
-        class_errors = [unsupervised_labels(y_hat[i], y, self, set_partition) for i in range(self.num_B_sub_heads)]
-        self.perf['class_err_min'][set_partition][idx] = np.min(class_errors)
-        self.perf['class_err_avg'][set_partition][idx] = np.mean(class_errors)
-        self.perf['class_err_max'][set_partition][idx] = np.max(class_errors)
+        if y_ph is not None:
+            class_errors = [unsupervised_labels(y, y_hats[i], self.k_B, self.k_B)
+                            for i in range(self.num_B_sub_heads)]
+            self.perf['class_err_min'][set_partition][idx] = np.min(class_errors)
+            self.perf['class_err_avg'][set_partition][idx] = np.mean(class_errors)
+            self.perf['class_err_max'][set_partition][idx] = np.max(class_errors)
+
+        # metrics are done
+        print('Done')
 
     def plot_learning_curve(self, epoch):
         """
@@ -296,100 +306,98 @@ class ClusterIIC(object):
         # eliminate those pesky margins
         self.fig_learn.subplots_adjust(left=0.1, bottom=0.15, right=0.95, top=0.95, wspace=0.25, hspace=0.3)
 
+    def train(self, graph, train_set, test_set, num_epochs, early_stop_buffer=15):
+        """
+        :param graph: the computational graph
+        :param train_set: TensorFlow Dataset object that corresponds to training data
+        :param test_set: TensorFlow Dataset object that corresponds to validation data
+        :param num_epochs: number of epochs
+        :param early_stop_buffer: early stop look-ahead distance (in epochs)
+        :return: None
+        """
+        # construct iterator
+        iterator = tf.compat.v1.data.make_initializable_iterator(train_set)
+        x, gx, y = iterator.get_next().values()
 
-def train(mdl_class, graph, mdl_config, train_set, test_set, early_stop_buffer=15):
-    """
-    :param mdl_class: model class object
-    :param graph: the computational graph
-    :param mdl_config: configuration dictionary
-    :param train_set: TensorFlow Dataset object that corresponds to training data
-    :param test_set: TensorFlow Dataset object that corresponds to validation data
-    :param early_stop_buffer: early stop look-ahead distance (in epochs)
-    :return: None
-    """
-    # construct iterator
-    iterator = tf.compat.v1.data.make_initializable_iterator(train_set)
-    x, gx, y = iterator.get_next().values()
+        # construct initialization operations
+        train_iter_init = iterator.make_initializer(train_set)
+        test_iter_init = iterator.make_initializer(test_set)
 
-    # construct initialization operations
-    train_iter_init = iterator.make_initializer(train_set)
-    test_iter_init = iterator.make_initializer(test_set)
+        # build the model using the supplied computational graph
+        self.__build(x, gx, graph)
 
-    # construct the model
-    mdl = mdl_class(graph, x, gx, **mdl_config)
+        # initialize performance dictionary
+        self.__performance_dictionary_init(num_epochs)
 
-    # initialize performance dictionary
-    mdl.performance_dictionary_init(mdl.num_epochs)
+        # start a monitored session
+        cfg = tf.compat.v1.ConfigProto()
+        cfg.gpu_options.allow_growth = True
+        with tf.compat.v1.Session(config=cfg) as sess:
 
-    # start a monitored session
-    cfg = tf.compat.v1.ConfigProto()
-    cfg.gpu_options.allow_growth = True
-    with tf.compat.v1.Session(config=cfg) as sess:
+            # initialize model variables
+            sess.run(tf.global_variables_initializer())
 
-        # initialize model variables
-        sess.run(tf.global_variables_initializer())
+            # loop over the number of epochs
+            for i in range(num_epochs):
 
-        # loop over the number of epochs
-        for i in range(mdl.num_epochs):
+                # start timer
+                start = time.time()
 
-            # start timer
-            start = time.time()
+                # get epoch number
+                epoch = i + 1
 
-            # get epoch number
-            epoch = i + 1
+                # get training operation
+                i_train = i % len(self.train_ops)
 
-            # get training operation
-            i_train = i % len(mdl.train_ops)
+                # initialize epoch iterator
+                sess.run(train_iter_init)
 
-            # initialize epoch iterator
-            sess.run(train_iter_init)
+                # loop over the batches
+                while True:
+                    try:
 
-            # loop over the batches
-            while True:
-                try:
+                        # run training and loss
+                        loss = sess.run([self.train_ops[i_train], self.loss], feed_dict={self.is_training: True})[-1]
 
-                    # run training and loss
-                    loss = sess.run([mdl.train_ops[i_train], mdl.loss])[-1]
+                        if np.isnan(loss):
+                            print('\n NaN whelp!')
+                            return
 
-                    if np.isnan(loss):
-                        print('\n NaN whelp!')
-                        return
+                        # print update
+                        print('\rEpoch {:d}, Loss = {:.4f}'.format(epoch, loss), end='')
 
-                    # print update
-                    print('\rEpoch {:d}, Loss = {:.4f}'.format(epoch, loss), end='')
+                    # iterator will throw this error when its out of data
+                    except tf.errors.OutOfRangeError:
+                        break
 
-                # iterator will throw this error when its out of data
-                except tf.errors.OutOfRangeError:
-                    break
+                # new line
+                print('')
 
-            # new line
-            print('')
+                # get data set performances
+                self.__performance_dictionary_update(sess, train_iter_init, 'train', i, y)
+                self.__performance_dictionary_update(sess, test_iter_init, 'test', i, y)
 
-            # get data set performances
-            mdl.performance_dictionary_update(sess, y, train_iter_init, 'train', i)
-            mdl.performance_dictionary_update(sess, y, test_iter_init, 'test', i)
+                # plot learning curve
+                self.plot_learning_curve(epoch)
 
-            # plot learning curve
-            mdl.plot_learning_curve(epoch)
+                # pause for plot drawing if we aren't saving
+                if self.save_dir is None:
+                    plt.pause(0.05)
 
-            # pause for plot drawing if we aren't saving
-            if mdl.save_dir is None:
-                plt.pause(0.05)
+                # print time for epoch
+                stop = time.time()
+                print('Time for Epoch = {:f}'.format(stop - start))
 
-            # print time for epoch
-            stop = time.time()
-            print('Time for Epoch = {:f}'.format(stop - start))
+                # early stop check
+                # i_best_elbo = np.argmin(self.perf['loss']['test'][:epoch])
+                # i_best_class = np.argmin(self.perf['class_err']['test'][:epoch])
+                # epochs_since_improvement = min(i - i_best_elbo, i - i_best_class)
+                # print('Early stop checks: {:d} / {:d}\n'.format(epochs_since_improvement, early_stop_buffer))
+                # if epochs_since_improvement >= early_stop_buffer:
+                #     break
 
-            # early stop check
-            # i_best_elbo = np.argmin(mdl.perf['loss']['test'][:epoch])
-            # i_best_class = np.argmin(mdl.perf['class_err']['test'][:epoch])
-            # epochs_since_improvement = min(i - i_best_elbo, i - i_best_class)
-            # print('Early stop checks: {:d} / {:d}\n'.format(epochs_since_improvement, early_stop_buffer))
-            # if epochs_since_improvement >= early_stop_buffer:
-            #     break
-
-    # save the performance
-    save_performance(mdl.perf, epoch, mdl.save_dir)
+        # save the performance
+        save_performance(self.perf, epoch, self.save_dir)
 
 
 if __name__ == '__main__':
@@ -415,16 +423,14 @@ if __name__ == '__main__':
             'num_classes': SET_INFO.features['label'].num_classes,
             'learning_rate': 1e-4,
             'num_repeats': DS_CONFIG[DATA_SET]['num_repeats'],
-            'num_epochs': 3200,
             'save_dir': None},
     }
 
-    # run training
-    train(mdl_class=ClusterIIC,
-          graph=IICGraph(config='B', fan_out_init=64),
-          mdl_config=MDL_CONFIG[DATA_SET],
-          train_set=TRAIN_SET,
-          test_set=TEST_SET)
+    # declare the model
+    mdl = ClusterIIC(**MDL_CONFIG[DATA_SET])
+
+    # train the model
+    mdl.train(IICGraph(config='B', fan_out_init=64), TRAIN_SET, TEST_SET, num_epochs=600)
 
     print('All done!')
     plt.show()
