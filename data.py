@@ -5,6 +5,9 @@ import tensorflow_datasets as tfds
 
 def mnist_x(x_orig, mdl_input_dims, is_training):
 
+    # rescale to [0, 1]
+    x_orig = tf.cast(x_orig, dtype=tf.float32) / x_orig.dtype.max
+
     # get common shapes
     height_width = mdl_input_dims[:-1]
     n_chans = mdl_input_dims[-1]
@@ -27,7 +30,14 @@ def mnist_x(x_orig, mdl_input_dims, is_training):
     return x
 
 
-def mnist_gx(x_orig, mdl_input_dims, sample_repeats):
+def mnist_gx(x_orig, mdl_input_dims, is_training, sample_repeats):
+
+    # if not training, return a constant value--it will unused but needs to be same shape to avoid TensorFlow errors
+    if not is_training:
+        return tf.zeros([0] + mdl_input_dims)
+
+    # rescale to [0, 1]
+    x_orig = tf.cast(x_orig, dtype=tf.float32) / x_orig.dtype.max
 
     # repeat samples accordingly
     x_orig = tf.tile(x_orig, [sample_repeats] + [1] * len(x_orig.shape.as_list()[1:]))
@@ -78,24 +88,15 @@ def pre_process_data(ds, info, is_training, **kwargs):
     """
     # apply pre-processing function for given data set and run-time conditions
     if info.name == 'mnist':
-        if is_training:
-            return ds.map(lambda d: {'x': mnist_x(tf.cast(d['image'], dtype=tf.float32) / d['image'].dtype.max,
-                                                  mdl_input_dims=kwargs['mdl_input_dims'],
-                                                  is_training=is_training),
-                                     'gx': mnist_gx(tf.cast(d['image'], dtype=tf.float32) / d['image'].dtype.max,
-                                                    mdl_input_dims=kwargs['mdl_input_dims'],
-                                                    sample_repeats=kwargs['num_repeats']),
-                                     'label': d['label']},
-                          num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        else:
-            return ds.map(lambda d: {'x': mnist_x(tf.cast(d['image'], dtype=tf.float32) / d['image'].dtype.max,
-                                                  mdl_input_dims=kwargs['mdl_input_dims'],
-                                                  is_training=is_training),
-                                     'gx': mnist_x(tf.cast(d['image'], dtype=tf.float32) / d['image'].dtype.max,
-                                                   mdl_input_dims=kwargs['mdl_input_dims'],
-                                                   is_training=is_training),
-                                     'label': d['label']},
-                          num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        return ds.map(lambda d: {'x': mnist_x(d['image'],
+                                              mdl_input_dims=kwargs['mdl_input_dims'],
+                                              is_training=is_training),
+                                 'gx': mnist_gx(d['image'],
+                                                mdl_input_dims=kwargs['mdl_input_dims'],
+                                                is_training=is_training,
+                                                sample_repeats=kwargs['num_repeats']),
+                                 'label': d['label']},
+                      num_parallel_calls=tf.data.experimental.AUTOTUNE)
     else:
         raise Exception('Unsupported data set: ' + info.name)
 
