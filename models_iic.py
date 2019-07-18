@@ -41,7 +41,7 @@ class ClusterIIC(object):
         # initialize losses
         self.loss_A = None
         self.loss_B = None
-        self.loss = None
+        self.losses = []
 
         # initialize optimizer
         self.learning_rate = learning_rate
@@ -133,7 +133,7 @@ class ClusterIIC(object):
         # construct losses
         self.loss_A = self.__head_loss(z_x, z_gx, self.k_A, self.num_A_sub_heads, 'A')
         self.loss_B = self.__head_loss(z_x, z_gx, self.k_B, self.num_B_sub_heads, 'B')
-        self.loss = self.loss_A + self.loss_B
+        self.losses = [self.loss_A, self.loss_B]
 
         # set alternating training operations
         self.train_ops.append(tf.contrib.layers.optimize_loss(loss=self.loss_A,
@@ -157,63 +157,47 @@ class ClusterIIC(object):
         :return: None
         """
         # initialize performance dictionary
-        init_dict = {'train': np.zeros(num_epochs),
-                     'test': np.zeros(num_epochs)}
         self.perf = dict()
 
         # loss terms
-        self.perf.update({'loss': copy.deepcopy(init_dict)})
-        self.perf.update({'loss_A': copy.deepcopy(init_dict)})
-        self.perf.update({'loss_B': copy.deepcopy(init_dict)})
+        self.perf.update({'loss_A': np.zeros(num_epochs)})
+        self.perf.update({'loss_B': np.zeros(num_epochs)})
 
         # classification error
-        self.perf.update({'class_err_min': copy.deepcopy(init_dict)})
-        self.perf.update({'class_err_avg': copy.deepcopy(init_dict)})
-        self.perf.update({'class_err_max': copy.deepcopy(init_dict)})
+        self.perf.update({'class_err_min': np.zeros(num_epochs)})
+        self.perf.update({'class_err_avg': np.zeros(num_epochs)})
+        self.perf.update({'class_err_max': np.zeros(num_epochs)})
 
-    def __performance_dictionary_update(self, sess, iter_init, set_partition, idx, y_ph=None):
+    def __classification_accuracy(self, sess, iter_init, idx, y_ph=None):
         """
-        :param self: model class
         :param sess: TensorFlow session
         :param iter_init: TensorFlow data iterator initializer associated
-        :param set_partition: set name (e.g. train, validation, test)
         :param idx: insertion index (i.e. epoch - 1)
         :param y_ph: TensorFlow placeholder for unseen labels
         :return: None
         """
-        if self.perf is None:
+        if self.perf is None or y_ph is None:
             return
 
         # initialize results
-        loss = []
-        loss_A = []
-        loss_B = []
         y = np.zeros([0, 1])
         y_hats = [np.zeros([0, 1])] * self.num_B_sub_heads
 
         # initialize unsupervised data iterator
         sess.run(iter_init)
 
-        # configure metrics lists
-        metrics = [self.loss, self.loss_A, self.loss_B, self.y_hats]
-        if y_ph is not None:
-            metrics.append(y_ph)
-
         # loop over the batches within the unsupervised data iterator
-        print('Evaluating ' + set_partition + ' set performance... ')
+        print('Evaluating classification accuracy... ')
         while True:
             try:
                 # grab the results
-                results = sess.run(metrics, feed_dict={self.is_training: False})
+                results = sess.run([self.y_hats, y_ph], feed_dict={self.is_training: False})
 
                 # load metrics
-                loss.append(results[0])
-                loss_A.append(results[1])
-                loss_B.append(results[2])
                 for i in range(self.num_B_sub_heads):
-                    y_hats[i] = np.concatenate((y_hats[i], np.expand_dims(results[3][i], axis=1)))
+                    y_hats[i] = np.concatenate((y_hats[i], np.expand_dims(results[0][i], axis=1)))
                 if y_ph is not None:
-                    y = np.concatenate((y, np.expand_dims(results[-1], axis=1)))
+                    y = np.concatenate((y, np.expand_dims(results[1], axis=1)))
 
                 # _, ax = plt.subplots(2, 10)
                 # i_rand = np.random.choice(results[3].shape[0], 10)
@@ -230,18 +214,13 @@ class ClusterIIC(object):
             except tf.errors.OutOfRangeError:
                 break
 
-        # average the results
-        self.perf['loss'][set_partition][idx] = np.mean(loss)
-        self.perf['loss_A'][set_partition][idx] = np.mean(loss_A)
-        self.perf['loss_B'][set_partition][idx] = np.mean(loss_B)
-
         # compute classification accuracy
         if y_ph is not None:
             class_errors = [unsupervised_labels(y, y_hats[i], self.k_B, self.k_B)
                             for i in range(self.num_B_sub_heads)]
-            self.perf['class_err_min'][set_partition][idx] = np.min(class_errors)
-            self.perf['class_err_avg'][set_partition][idx] = np.mean(class_errors)
-            self.perf['class_err_max'][set_partition][idx] = np.max(class_errors)
+            self.perf['class_err_min'][idx] = np.min(class_errors)
+            self.perf['class_err_avg'][idx] = np.mean(class_errors)
+            self.perf['class_err_max'][idx] = np.max(class_errors)
 
         # metrics are done
         print('Done')
@@ -255,53 +234,36 @@ class ClusterIIC(object):
         t = np.arange(1, epoch + 1)
 
         # colors
-        c = {'train': '#1f77b4', 'test': '#ff7f0e'}
-
-        # text position
-        x50 = int(epoch / 2 + 0.5)
-        x75 = int(3 * epoch / 4 + 0.5)
+        c = {'Head A': '#1f77b4', 'Head B': '#ff7f0e'}
 
         # plot the loss
         self.ax_learn[0].clear()
         self.ax_learn[0].set_title('Loss')
-        self.ax_learn[0].plot(t, self.perf['loss']['train'][:epoch], linestyle='-', color=c['train'])
-        self.ax_learn[0].plot(t, self.perf['loss']['test'][:epoch], linestyle='-', color=c['test'])
-        self.ax_learn[0].text(x75,
-                              min(min(self.perf['loss']['train'][:x50]), min(self.perf['loss']['test'][:x50])),
-                              'Total')
-        self.ax_learn[0].plot(t, self.perf['loss_A']['train'][:epoch], linestyle='--', color=c['train'])
-        self.ax_learn[0].plot(t, self.perf['loss_A']['test'][:epoch], linestyle='--', color=c['test'])
-        self.ax_learn[0].text(x75,
-                              min(min(self.perf['loss_A']['train'][:x50]), min(self.perf['loss_A']['test'][:x50])),
-                              'Head A')
-        self.ax_learn[0].plot(t, self.perf['loss_B']['train'][:epoch], linestyle=':', color=c['train'])
-        self.ax_learn[0].plot(t, self.perf['loss_B']['test'][:epoch], linestyle=':', color=c['test'])
-        self.ax_learn[0].text(x75,
-                              min(min(self.perf['loss_B']['train'][:x50]), min(self.perf['loss_B']['test'][:x50])),
-                              'Head B')
+        self.ax_learn[0].plot(t, self.perf['loss_A'][:epoch], label='Head A', color=c['Head A'])
+        self.ax_learn[0].plot(t, self.perf['loss_B'][:epoch], label='Head B', color=c['Head B'])
         self.ax_learn[0].xaxis.set_major_formatter(FormatStrFormatter('%.0f'))
         self.ax_learn[0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
         # plot the classification error
         self.ax_learn[1].clear()
         self.ax_learn[1].set_title('Class. Error (Min, Avg, Max)')
-        self.ax_learn[1].plot(t, self.perf['class_err_avg']['train'][:epoch], color=c['train'])
+        self.ax_learn[1].plot(t, self.perf['class_err_avg'][:epoch], color=c['Head B'])
         self.ax_learn[1].fill_between(t,
-                                      self.perf['class_err_min']['train'][:epoch],
-                                      self.perf['class_err_max']['train'][:epoch],
-                                      facecolor=c['train'], alpha=0.5)
-        self.ax_learn[1].plot(t, self.perf['class_err_avg']['test'][:epoch], color=c['test'])
+                                      self.perf['class_err_min'][:epoch],
+                                      self.perf['class_err_max'][:epoch],
+                                      facecolor=c['Head B'], alpha=0.5)
+        self.ax_learn[1].plot(t, self.perf['class_err_avg'][:epoch], color=c['Head B'])
         self.ax_learn[1].fill_between(t,
-                                      self.perf['class_err_min']['test'][:epoch],
-                                      self.perf['class_err_max']['test'][:epoch],
-                                      facecolor=c['test'], alpha=0.5)
+                                      self.perf['class_err_min'][:epoch],
+                                      self.perf['class_err_max'][:epoch],
+                                      facecolor=c['Head B'], alpha=0.5)
         self.ax_learn[1].xaxis.set_major_formatter(FormatStrFormatter('%.0f'))
         self.ax_learn[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
         # make the legend
         self.ax_learn[1].legend(handles=[patches.Patch(color=val, label=key) for key, val in c.items()],
                                 ncol=len(c),
-                                bbox_to_anchor=(0.25, -0.06))
+                                bbox_to_anchor=(0.35, -0.06))
 
         # eliminate those pesky margins
         self.fig_learn.subplots_adjust(left=0.1, bottom=0.15, right=0.95, top=0.95, wspace=0.25, hspace=0.3)
@@ -353,18 +315,25 @@ class ClusterIIC(object):
                 sess.run(train_iter_init)
 
                 # loop over the batches
+                loss_A = []
+                loss_B = []
                 while True:
                     try:
 
-                        # run training and loss
-                        loss = sess.run([self.train_ops[i_train], self.loss], feed_dict={self.is_training: True})[-1]
+                        # run training and losses
+                        losses = sess.run([self.train_ops[i_train]] + [self.losses],
+                                          feed_dict={self.is_training: True})[-1]
 
-                        if np.isnan(loss):
+                        # load metrics
+                        loss_A.append(losses[0])
+                        loss_B.append(losses[1])
+
+                        if np.isnan(losses).any():
                             print('\n NaN whelp!')
                             return
 
                         # print update
-                        print('\rEpoch {:d}, Loss = {:.4f}'.format(epoch, loss), end='')
+                        print('\rEpoch {:d}, Loss = {:.4f}'.format(epoch, losses[i_train]), end='')
 
                     # iterator will throw this error when its out of data
                     except tf.errors.OutOfRangeError:
@@ -373,9 +342,12 @@ class ClusterIIC(object):
                 # new line
                 print('')
 
-                # get data set performances
-                self.__performance_dictionary_update(sess, train_iter_init, 'train', i, y)
-                self.__performance_dictionary_update(sess, test_iter_init, 'test', i, y)
+                # save averaged training performance
+                self.perf['loss_A'][i] = np.mean(loss_A)
+                self.perf['loss_B'][i] = np.mean(loss_B)
+
+                # get classification performance
+                self.__classification_accuracy(sess, test_iter_init, i, y)
 
                 # plot learning curve
                 self.plot_learning_curve(epoch)
