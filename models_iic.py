@@ -26,31 +26,27 @@ class ClusterIIC(object):
         :param learning_rate: gradient step size
         :param num_repeats: number of data repeats for x and g(x), used to up-sample
         """
-        # training indicating placeholder
-        self.is_training = tf.placeholder(tf.bool)
-
-        # number of repeats
-        self.num_repeats = num_repeats
-
         # save configuration
         self.k_A = 5 * num_classes
         self.num_A_sub_heads = 1
         self.k_B = num_classes
         self.num_B_sub_heads = 5
+        self.num_repeats = num_repeats
 
         # initialize losses
         self.loss_A = None
         self.loss_B = None
         self.losses = []
 
+        # initialize outputs
+        self.y_hats = None
+
         # initialize optimizer
+        self.is_training = tf.compat.v1.placeholder(tf.bool)
         self.learning_rate = learning_rate
         self.global_step = tf.Variable(0, name='global_step', trainable=False)
         self.opt = tf.compat.v1.train.AdamOptimizer(self.learning_rate)
         self.train_ops = []
-
-        # initialize outputs outputs
-        self.y_hats = None
 
         # initialize performance dictionary
         self.perf = None

@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 # set trainable variable initialization routines
-KERNEL_INIT = tf.compat.v1.initializers.he_uniform()
+KERNEL_INIT = tf.keras.initializers.he_uniform()
 WEIGHT_INIT = tf.random_normal_initializer(mean=0.0, stddev=0.01)
 BIAS_INIT = tf.constant_initializer(0.0)
 
