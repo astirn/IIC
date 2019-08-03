@@ -30,12 +30,12 @@ Running this code will print to console and produce a dynamically updated learni
 
 ![Alt text](Figure_1.png?raw=true "Learning Curve")
 
-For this MNIST example, the (K=10) subheads' classification error rates were:
-Subhead 1 Classification error = 0.0076
-Subhead 2 Classification error = 0.0076
-Subhead 3 Classification error = 0.0076
-Subhead 4 Classification error = 0.1500
-Subhead 5 Classification error = 0.0076
+For this MNIST example, the (K=10) subheads' classification error rates were:<br />
+Subhead 1 Classification error = 0.0076<br />
+Subhead 2 Classification error = 0.0076<br />
+Subhead 3 Classification error = 0.0076<br />
+Subhead 4 Classification error = 0.1500<br />
+Subhead 5 Classification error = 0.0076<br />
 
 This results in a mean error rate of 0.0360.
 
