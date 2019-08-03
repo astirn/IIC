@@ -30,8 +30,17 @@ Running this code will print to console and produce a dynamically updated learni
 
 ![Alt text](Figure_1.png?raw=true "Learning Curve")
 
+For this MNIST example, the (K=10) subheads' classification error rates were:
+Subhead 1 Classification error = 0.0076
+Subhead 2 Classification error = 0.0076
+Subhead 3 Classification error = 0.0076
+Subhead 4 Classification error = 0.1500
+Subhead 5 Classification error = 0.0076
+
+This results in a mean error rate of 0.0360.
+
 ## Notes
 The MNIST accuracy reported in https://arxiv.org/abs/1807.06653 suggests that all 5 subheads converge to ~99% accuracy.
 My run-to-run variability suggests that while at least one head always converges to very high accuracy, some heads may
-not attain ~99%. Often I see 2-4 subheads at ~99% with the other subheads at ~88% accuracy. I have not yet run the code
+not attain ~99%. I often see 2-4 subheads at ~99% with the other subheads at ~88% accuracy. I have not yet run the code
 for the full 3200 epochs, so perhaps that resolves it.
